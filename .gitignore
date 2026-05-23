@@ -1,0 +1,115 @@
+# ==============================================
+# Java / Spring Boot (backend)
+# ==============================================
+**/target/
+**/build/
+**/*.class
+**/*.jar
+**/*.war
+**/*.ear
+**/*.log
+
+# Gradle
+**/backend/build/
+**/backend/.gradle/
+**/backend/gradle/
+
+# Maven
+**/backend/pom.xml.tag
+**/backend/pom.xml.releaseBackup
+**/backend/pom.xml.versionsBackup
+**/backend/pom.xml.next
+**/backend/release.properties
+
+# IDE - IntelliJ IDEA
+**/.idea/
+**/*.iml
+**/out/
+**/*.iws
+**/*.ipr
+
+# IDE - Eclipse / VS Code
+**/.classpath
+**/.project
+**/.settings/
+**/.factorypath
+
+# OS
+**/.DS_Store
+**/Thumbs.db
+
+# ==============================================
+# Node.js / Next.js (frontend)
+# ==============================================
+**/frontend/node_modules/
+**/frontend/.next/
+**/frontend/out/
+**/frontend/dist/
+**/frontend/.turbo/
+
+# Build outputs
+**/frontend/build/
+**/frontend/.cache/
+
+# Environment
+**/frontend/.env
+**/frontend/.env.local
+**/frontend/.env.*.local
+
+# npm debug
+**/frontend/npm-debug.log*
+**/frontend/yarn-debug.log*
+**/frontend/yarn-error.log*
+
+# ==============================================
+# Go / Smart Contract
+# ==============================================
+**/smart-contract/vendor/
+**/smart-contract/bin/
+**/smart-contract/pkg/
+**/smart-contract/*.exe
+**/smart-contract/test-network/
+
+# Go build cache
+**/go.sum
+**/go.mod
+
+# ==============================================
+# Gateway
+# ==============================================
+**/gateway/node_modules/
+**/gateway/dist/
+**/gateway/.env
+**/gateway/.env.local
+
+# ==============================================
+# Blockchain / Fabric Test Network
+# ==============================================
+**/test-network/organizations/
+**/test-network/channel-artifacts/
+**/test-network/.env
+**/test-network/scripts/*.sh
+**/test-network/logs/
+
+# ==============================================
+# General
+# ==============================================
+**/*.log
+**/*.tmp
+**/*.bak
+**/*.swp
+**/*~
+
+# Credentials / secrets
+**/credentials.json
+**/secrets.json
+**/*.pem
+**/*.key
+
+# Docker
+**/.dockerignore
+
+# Temporary files
+**/.tmp/
+**/tmp/
+**/temp/

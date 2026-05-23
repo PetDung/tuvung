@@ -1,0 +1,27 @@
+{
+    "name": "agri-trace-gateway",
+    "version": "1.0.0",
+    "description": "AgriTrace Gateway Application - Agricultural Product Traceability on Hyperledger Fabric",
+    "engines": {
+        "node": ">=20"
+    },
+    "scripts": {
+        "lint": "eslint src",
+        "pretest": "npm run lint",
+        "start": "node src/app.js"
+    },
+    "engineStrict": true,
+    "author": "AgriTrace",
+    "license": "Apache-2.0",
+    "dependencies": {
+        "@grpc/grpc-js": "^1.14.0",
+        "@hyperledger/fabric-gateway": "^1.10.0",
+        "axios": "^1.7.0",
+        "express": "^4.21.0"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.5.0",
+        "eslint": "^9.5.0",
+        "globals": "^15.6.0"
+    }
+}

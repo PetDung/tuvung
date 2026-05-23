@@ -1,0 +1,3 @@
+allowBuilds:
+  pkcs11js: false
+  protobufjs: false
