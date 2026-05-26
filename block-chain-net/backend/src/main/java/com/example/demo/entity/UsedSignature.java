@@ -30,6 +30,9 @@ public class UsedSignature {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String signature;
 
+    @Column(length = 36, unique = true)
+    private String nonce;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private SignatureAction action;
@@ -42,6 +45,9 @@ public class UsedSignature {
 
     @Column(name = "prev_hash", length = 64)
     private String prevHash;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")

@@ -17,7 +17,6 @@ import com.example.demo.repository.ShipmentEventRepository;
 import com.example.demo.repository.ShipmentRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.security.SecurityUtils;
-import com.example.demo.service.GatewayService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -42,7 +41,6 @@ public class ShipmentService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
     private final SecurityUtils securityUtils;
-    private final GatewayService gatewayService;
 
     @Transactional
     public ShipmentResponse createShipment(CreateShipmentRequest request) {
@@ -60,10 +58,19 @@ public class ShipmentService {
         Product product = productRepository.findById(UUID.fromString(request.getProductId()))
                 .orElseThrow(() -> new ResourceNotFoundException("Product", "id", request.getProductId()));
 
-        // Check if product is locked (cannot create shipment for shipped products)
+        // Check if product already has an active shipment (PENDING, ACCEPTED, or IN_TRANSIT)
         if (product.isLocked()) {
             throw new BadRequestException("Cannot create shipment: product has been shipped and is locked. Reason: " + 
                     (product.getLockedReason() != null ? product.getLockedReason() : "Shipped"));
+        }
+
+        // Check for existing active shipment for this product
+        java.util.Optional<Shipment> existingShipment = shipmentRepository.findByProductId(UUID.fromString(request.getProductId()));
+        if (existingShipment.isPresent()) {
+            ShipmentStatus existingStatus = existingShipment.get().getStatus();
+            if (existingStatus != ShipmentStatus.DELIVERED) {
+                throw new BadRequestException("Cannot create shipment: product already has an active shipment (status: " + existingStatus + ")");
+            }
         }
 
         // fromLocation = product origin, toLocation = retailer's address
@@ -146,107 +153,6 @@ public class ShipmentService {
         shipmentEventRepository.save(event);
 
         log.info("Shipment accepted successfully: {}", shipmentId);
-        return ShipmentResponse.fromEntity(shipment);
-    }
-
-    @Transactional
-    public ShipmentResponse startShipping(UUID shipmentId, String transportType, String vehiclePlate) {
-        log.info("Starting shipping for shipment: {}", shipmentId);
-
-        Shipment shipment = shipmentRepository.findById(shipmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Shipment", "id", shipmentId));
-
-        if (shipment.getStatus() != ShipmentStatus.ACCEPTED) {
-            throw new BadRequestException("Shipment can only start shipping from ACCEPTED status");
-        }
-
-        UUID actorId = shipment.getDistributorId() != null ? shipment.getDistributorId() : shipment.getFromUserId();
-        User actor = userRepository.findById(actorId).orElse(null);
-        String actorName = actor != null ? actor.getFullName() : null;
-
-        // Update transport info if provided
-        if (transportType != null) {
-            shipment.setTransportType(transportType);
-        }
-        if (vehiclePlate != null) {
-            shipment.setVehiclePlate(vehiclePlate);
-        }
-
-        shipment.setStatus(ShipmentStatus.IN_TRANSIT);
-        shipment.setDepartureTime(LocalDateTime.now());
-        shipment = shipmentRepository.save(shipment);
-
-        ShipmentEvent event = ShipmentEvent.builder()
-                .shipmentId(shipment.getId())
-                .productId(shipment.getProductId())
-                .action(ShipmentAction.SHIPPING)
-                .actorId(actorId)
-                .actorName(actorName)
-                .location(shipment.getFromLocation())
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        shipmentEventRepository.save(event);
-
-        // Update product status on blockchain via Gateway
-        try {
-            gatewayService.shipProduct(
-                    shipment.getProductId().toString(),
-                    actorId.toString(),
-                    actorName != null ? actorName : "",
-                    shipment.getFromLocation()
-            );
-        } catch (Exception e) {
-            log.warn("Failed to update product status on Gateway: {}", e.getMessage());
-        }
-
-        log.info("Shipment shipping started successfully: {}", shipmentId);
-        return ShipmentResponse.fromEntity(shipment);
-    }
-
-    @Transactional
-    public ShipmentResponse markDelivered(UUID shipmentId) {
-        log.info("Marking shipment as delivered: {}", shipmentId);
-
-        Shipment shipment = shipmentRepository.findById(shipmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Shipment", "id", shipmentId));
-
-        if (shipment.getStatus() != ShipmentStatus.IN_TRANSIT) {
-            throw new BadRequestException("Shipment can only be marked as delivered from IN_TRANSIT status");
-        }
-
-        User toUser = userRepository.findById(shipment.getToUserId()).orElse(null);
-        User distributor = userRepository.findById(shipment.getDistributorId()).orElse(null);
-
-        shipment.setStatus(ShipmentStatus.DELIVERED);
-        shipment.setArrivalTime(LocalDateTime.now());
-        shipment = shipmentRepository.save(shipment);
-
-        ShipmentEvent event = ShipmentEvent.builder()
-                .shipmentId(shipment.getId())
-                .productId(shipment.getProductId())
-                .action(ShipmentAction.DELIVERED)
-                .actorId(shipment.getToUserId())
-                .actorName(toUser != null ? toUser.getFullName() : null)
-                .location(shipment.getToLocation())
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        shipmentEventRepository.save(event);
-
-        // Update product status on blockchain via Gateway
-        try {
-            gatewayService.receiveProduct(
-                    shipment.getProductId().toString(),
-                    toUser != null ? toUser.getId().toString() : "",
-                    toUser != null ? toUser.getFullName() : "",
-                    shipment.getToLocation()
-            );
-        } catch (Exception e) {
-            log.warn("Failed to update product status on Gateway: {}", e.getMessage());
-        }
-
-        log.info("Shipment delivered successfully: {}", shipmentId);
         return ShipmentResponse.fromEntity(shipment);
     }
 

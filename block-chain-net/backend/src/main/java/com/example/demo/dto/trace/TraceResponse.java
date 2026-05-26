@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -13,10 +14,19 @@ import java.util.List;
 @Builder
 public class TraceResponse {
     private String productId;
-    private String refId;
+    private String farmerId;
     private String farmerName;
+    private String productName;
+    private String category;
+    private String origin;
+    private String harvestDate;
+    private String grade;
+    private String description;
     private String status;
     private String currentQrCode;
+    private String currentSignature;
+    private String createdAt;
+    private String updatedAt;
     private List<TraceEvent> events;
 
     @Data

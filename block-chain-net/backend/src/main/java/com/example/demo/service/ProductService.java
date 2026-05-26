@@ -3,11 +3,15 @@ package com.example.demo.service;
 import com.example.demo.dto.product.*;
 import com.example.demo.entity.Product;
 import com.example.demo.entity.ProductStatus;
+import com.example.demo.entity.Shipment;
+import com.example.demo.entity.ShipmentStatus;
 import com.example.demo.entity.SignatureAction;
 import com.example.demo.entity.User;
+import com.example.demo.entity.UserRole;
 import com.example.demo.exception.BadRequestException;
 import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.repository.ProductRepository;
+import com.example.demo.repository.ShipmentRepository;
 import com.example.demo.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +31,8 @@ import java.util.stream.Collectors;
 public class ProductService {
 
     private final ProductRepository productRepository;
-    private final GatewayService gatewayService;
+    private final ShipmentRepository shipmentRepository;
+    private final ProductBlockchainService blockchainService;
     private final SignatureService signatureService;
     private final SecurityUtils securityUtils;
 
@@ -59,7 +64,7 @@ public class ProductService {
                 null
         );
 
-        Map<String, Object> gatewayResponse = gatewayService.createProduct(
+        String txId = blockchainService.syncCreateProduct(
                 product.getId().toString(),
                 product.getId().toString(),
                 product.getFarmerId().toString(),
@@ -67,8 +72,8 @@ public class ProductService {
                 signature
         );
 
-        if (gatewayResponse != null && gatewayResponse.containsKey("txId")) {
-            product.setBlockchainTxId(gatewayResponse.get("txId").toString());
+        if (txId != null) {
+            product.setBlockchainTxId(txId);
         }
 
         product.setCurrentSignature(signature);
@@ -89,9 +94,18 @@ public class ProductService {
             throw new BadRequestException("Product can only be approved from REGISTERED status");
         }
 
-        // Get inspector from current user
         User currentUser = securityUtils.getCurrentUser();
 
+        // 1. Mark old signature (REGISTERED) as used — consumed by this approval
+        String oldSignature = product.getCurrentSignature();
+        if (oldSignature != null) {
+            signatureService.markSignatureUsed(
+                    oldSignature, productId, SignatureAction.REGISTERED,
+                    product.getFarmerId(), product.getOrigin(), "GENESIS"
+            );
+        }
+
+        // 2. Create new active signature (APPROVED) — NOT marked as used
         String prevHash = signatureService.getLastSignatureHash(productId);
         String signature = signatureService.createSignature(
                 productId,
@@ -101,20 +115,15 @@ public class ProductService {
                 prevHash
         );
 
-        Map<String, Object> gatewayResponse = gatewayService.approveProduct(
+        // 3. Sync blockchain
+        String txId = blockchainService.syncApproveProduct(
                 productId.toString(),
                 currentUser.getId().toString(),
                 currentUser.getFullName(),
                 request.getLocation()
         );
 
-        signatureService.markSignatureUsed(
-                signature, productId, SignatureAction.APPROVED,
-                currentUser.getId(),
-                request.getLocation(),
-                prevHash
-        );
-
+        // 4. Update product state
         product.setStatus(ProductStatus.INSPECTED);
         product.setCurrentSignature(signature);
         product.setQrCode(generateQrCodeUrl(productId.toString(), signature));
@@ -126,152 +135,12 @@ public class ProductService {
             product.setDescription(request.getNotes());
         }
 
-        if (gatewayResponse != null && gatewayResponse.containsKey("txId")) {
-            product.setBlockchainTxId(gatewayResponse.get("txId").toString());
+        if (txId != null) {
+            product.setBlockchainTxId(txId);
         }
 
         product = productRepository.save(product);
         log.info("Product approved successfully: {}", productId);
-
-        return ProductResponse.fromEntity(product);
-    }
-
-    @Transactional
-    public ProductResponse shipProduct(UUID productId, ShipProductRequest request) {
-        log.info("Shipping product: {}", productId);
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product", "id", productId));
-
-        if (product.getStatus() != ProductStatus.INSPECTED) {
-            throw new BadRequestException("Product can only be shipped from INSPECTED status");
-        }
-
-        String prevHash = signatureService.getLastSignatureHash(productId);
-        String signature = signatureService.createSignature(
-                productId,
-                SignatureAction.SHIPPED,
-                UUID.fromString(request.getDistributorId()),
-                request.getLocation(),
-                prevHash
-        );
-
-        Map<String, Object> gatewayResponse = gatewayService.shipProduct(
-                productId.toString(),
-                request.getDistributorId(),
-                request.getDistributorName(),
-                request.getLocation()
-        );
-
-        signatureService.markSignatureUsed(
-                signature, productId, SignatureAction.SHIPPED,
-                UUID.fromString(request.getDistributorId()),
-                request.getLocation(),
-                prevHash
-        );
-
-        product.setStatus(ProductStatus.IN_TRANSIT);
-        product.setCurrentSignature(signature);
-        product.setQrCode(generateQrCodeUrl(productId.toString(), signature));
-
-        if (gatewayResponse != null && gatewayResponse.containsKey("txId")) {
-            product.setBlockchainTxId(gatewayResponse.get("txId").toString());
-        }
-
-        product = productRepository.save(product);
-        log.info("Product shipped successfully: {}", productId);
-
-        return ProductResponse.fromEntity(product);
-    }
-
-    @Transactional
-    public ProductResponse receiveProduct(UUID productId, ReceiveProductRequest request) {
-        log.info("Receiving product: {}", productId);
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product", "id", productId));
-
-        if (product.getStatus() != ProductStatus.IN_TRANSIT) {
-            throw new BadRequestException("Product can only be received from IN_TRANSIT status");
-        }
-
-        String prevHash = signatureService.getLastSignatureHash(productId);
-        String signature = signatureService.createSignature(
-                productId,
-                SignatureAction.DELIVERED,
-                UUID.fromString(request.getRetailerId()),
-                request.getLocation(),
-                prevHash
-        );
-
-        Map<String, Object> gatewayResponse = gatewayService.receiveProduct(
-                productId.toString(),
-                request.getRetailerId(),
-                request.getRetailerName(),
-                request.getLocation()
-        );
-
-        signatureService.markSignatureUsed(
-                signature, productId, SignatureAction.DELIVERED,
-                UUID.fromString(request.getRetailerId()),
-                request.getLocation(),
-                prevHash
-        );
-
-        product.setStatus(ProductStatus.DELIVERED);
-        product.setCurrentSignature(signature);
-        product.setQrCode(generateQrCodeUrl(productId.toString(), signature));
-
-        if (gatewayResponse != null && gatewayResponse.containsKey("txId")) {
-            product.setBlockchainTxId(gatewayResponse.get("txId").toString());
-        }
-
-        product = productRepository.save(product);
-        log.info("Product received successfully: {}", productId);
-
-        return ProductResponse.fromEntity(product);
-    }
-
-    @Transactional
-    public ProductResponse updateProductStatus(UUID productId, UpdateProductStatusRequest request) {
-        log.info("Updating product status: {} to {}", productId, request.getStatus());
-
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product", "id", productId));
-
-        String prevHash = signatureService.getLastSignatureHash(productId);
-        String signature = signatureService.createSignature(
-                productId,
-                SignatureAction.SOLD,
-                UUID.fromString(request.getActorId()),
-                "Sale",
-                prevHash
-        );
-
-        Map<String, Object> gatewayResponse = gatewayService.updateProductStatus(
-                productId.toString(),
-                request.getStatus().name(),
-                request.getActorId(),
-                request.getActorName()
-        );
-
-        signatureService.markSignatureUsed(
-                signature, productId, SignatureAction.SOLD,
-                UUID.fromString(request.getActorId()),
-                "Sale",
-                prevHash
-        );
-
-        product.setStatus(request.getStatus());
-        product.setCurrentSignature(signature);
-        product.setQrCode(generateQrCodeUrl(productId.toString(), signature));
-
-        if (gatewayResponse != null && gatewayResponse.containsKey("txId")) {
-            product.setBlockchainTxId(gatewayResponse.get("txId").toString());
-        }
-
-        product = productRepository.save(product);
-        log.info("Product status updated successfully: {}", productId);
 
         return ProductResponse.fromEntity(product);
     }
@@ -282,7 +151,9 @@ public class ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", "id", productId));
 
-        return ProductResponse.fromEntity(product);
+        ProductResponse response = ProductResponse.fromEntity(product);
+        applyQrVisibilityForCurrentUser(Collections.singletonList(response));
+        return response;
     }
 
     public ProductResponse getProductWithHistory(UUID productId) {
@@ -291,7 +162,7 @@ public class ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product", "id", productId));
 
-        List<Map<String, Object>> historyData = gatewayService.getProductHistory(productId.toString());
+        List<Map<String, Object>> historyData = blockchainService.getHistory(productId.toString());
 
         List<ProductResponse.ProductHistoryItem> history = historyData.stream()
                 .map(item -> ProductResponse.ProductHistoryItem.builder()
@@ -304,7 +175,9 @@ public class ProductService {
                         .build())
                 .collect(Collectors.toList());
 
-        return ProductResponse.fromEntityWithHistory(product, history);
+        ProductResponse response = ProductResponse.fromEntityWithHistory(product, history);
+        applyQrVisibilityForCurrentUser(Collections.singletonList(response));
+        return response;
     }
 
     public List<ProductResponse.ProductHistoryItem> getProductHistory(UUID productId) {
@@ -314,7 +187,7 @@ public class ProductService {
             throw new ResourceNotFoundException("Product", "id", productId);
         }
 
-        List<Map<String, Object>> historyData = gatewayService.getProductHistory(productId.toString());
+        List<Map<String, Object>> historyData = blockchainService.getHistory(productId.toString());
 
         return historyData.stream()
                 .map(item -> ProductResponse.ProductHistoryItem.builder()
@@ -335,7 +208,7 @@ public class ProductService {
             throw new ResourceNotFoundException("Product", "id", productId);
         }
 
-        return gatewayService.getProductEvents(productId.toString());
+        return blockchainService.getEvents(productId.toString());
     }
 
     public List<ProductResponse> getProductsByFarmer(UUID farmerId) {
@@ -356,12 +229,105 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Get products for RETAILER: approved products (INSPECTED) + products in their shipments
+     */
+    public List<ProductResponse> getRetailerProducts(UUID retailerId) {
+        log.info("Getting products for retailer: {}", retailerId);
+
+        // 1. Get INSPECTED products (available to order)
+        List<Product> approvedProducts = productRepository.findByStatus(ProductStatus.INSPECTED);
+        
+        // 2. Get products in retailer's shipments (toUserId = retailer)
+        List<Shipment> retailerShipments = shipmentRepository.findByToUserId(retailerId);
+        Set<UUID> shipmentProductIds = retailerShipments.stream()
+                .map(Shipment::getProductId)
+                .collect(Collectors.toSet());
+        
+        // 3. Merge: add products from shipments (not already in INSPECTED list)
+        Set<UUID> inspectedIds = approvedProducts.stream()
+                .map(Product::getId)
+                .collect(Collectors.toSet());
+        
+        // Only fetch products that are NOT already in the INSPECTED list
+        List<UUID> shipmentOnlyIds = shipmentProductIds.stream()
+                .filter(id -> !inspectedIds.contains(id))
+                .collect(Collectors.toList());
+        
+        List<Product> allProducts = new ArrayList<>(approvedProducts);
+        if (!shipmentOnlyIds.isEmpty()) {
+            allProducts.addAll(productRepository.findByIdIn(shipmentOnlyIds));
+        }
+        
+        // 4. Enrich with hasActiveShipment and apply QR visibility
+        List<ProductResponse> responses = enrichWithActiveShipment(allProducts);
+        applyQrVisibilityForCurrentUser(responses);
+        return responses;
+    }
+
+    /**
+     * Get products for DISTRIBUTOR: only products in shipments they've accepted
+     */
+    public List<ProductResponse> getDistributorProducts(UUID distributorId) {
+        log.info("Getting products for distributor: {}", distributorId);
+
+        // Get shipments where distributor accepted (ACCEPTED, IN_TRANSIT, DELIVERED)
+        List<Shipment> distributorShipments = shipmentRepository.findByDistributorId(distributorId);
+        
+        if (distributorShipments.isEmpty()) {
+            log.info("No shipments found for distributor: {}", distributorId);
+            return Collections.emptyList();
+        }
+        
+        // Get products from these shipments
+        List<UUID> productIds = distributorShipments.stream()
+                .map(Shipment::getProductId)
+                .collect(Collectors.toList());
+        
+        List<Product> products = productRepository.findByIdIn(productIds);
+        
+        // Enrich with hasActiveShipment and apply QR visibility
+        List<ProductResponse> responses = enrichWithActiveShipment(products);
+        applyQrVisibilityForCurrentUser(responses);
+        return responses;
+    }
+
+    /**
+     * Get approved products (INSPECTED) — kept for backward compatibility
+     */
     public List<ProductResponse> getApprovedProducts() {
-        log.info("Getting approved products for retailer");
+        log.info("Getting approved products");
         
         List<Product> products = productRepository.findByStatus(ProductStatus.INSPECTED);
+        List<ProductResponse> responses = enrichWithActiveShipment(products);
+        applyQrVisibilityForCurrentUser(responses);
+        return responses;
+    }
+
+    /**
+     * Enrich products with hasActiveShipment flag and convert to response
+     */
+    private List<ProductResponse> enrichWithActiveShipment(List<Product> products) {
+        if (products.isEmpty()) return Collections.emptyList();
+
+        // Get all shipments for these products
+        List<UUID> productIds = products.stream()
+                .map(Product::getId)
+                .collect(Collectors.toList());
+        List<Shipment> shipments = shipmentRepository.findByProductIdIn(productIds);
+        
+        // Build map: productId -> has active (non-DELIVERED) shipment?
+        Set<UUID> productsWithActiveShipment = shipments.stream()
+                .filter(s -> s.getStatus() != ShipmentStatus.DELIVERED)
+                .map(Shipment::getProductId)
+                .collect(Collectors.toSet());
+
         return products.stream()
-                .map(ProductResponse::fromEntity)
+                .map(product -> {
+                    ProductResponse response = ProductResponse.fromEntity(product);
+                    response.setHasActiveShipment(productsWithActiveShipment.contains(product.getId()));
+                    return response;
+                })
                 .collect(Collectors.toList());
     }
 
@@ -385,6 +351,34 @@ public class ProductService {
         result.put("hasPrevious", productPage.hasPrevious());
 
         return result;
+    }
+
+    /**
+     * Apply QR visibility rules based on current user's role and product status.
+     * Clears qrCode and sets qrHiddenReason if the user is not authorized to view it.
+     */
+    private void applyQrVisibilityForCurrentUser(List<ProductResponse> responses) {
+        User currentUser = securityUtils.getCurrentUser();
+        if (currentUser == null) return;
+
+        UserRole role = currentUser.getRole();
+
+        for (ProductResponse response : responses) {
+            String reason = null;
+
+            if (role == UserRole.RETAILER && response.getStatus() != ProductStatus.DELIVERED) {
+                reason = "QR sẽ hiển thị khi hàng đã giao đến bạn";
+            } else if (role == UserRole.DISTRIBUTOR
+                    && response.getStatus() != ProductStatus.INSPECTED
+                    && response.getStatus() != ProductStatus.IN_TRANSIT) {
+                reason = "QR chỉ hiển thị trong quá trình vận chuyển";
+            }
+
+            if (reason != null) {
+                response.setQrCode(null);
+                response.setQrHiddenReason(reason);
+            }
+        }
     }
 
     private String generateQrCodeUrl(String productId, String signature) {

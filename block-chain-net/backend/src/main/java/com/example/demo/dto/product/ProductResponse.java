@@ -32,6 +32,8 @@ public class ProductResponse {
     private ProductStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private boolean hasActiveShipment;
+    private String qrHiddenReason;
     private List<ProductHistoryItem> history;
 
     @Data

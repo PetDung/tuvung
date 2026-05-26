@@ -15,6 +15,8 @@ public interface UsedSignatureRepository extends JpaRepository<UsedSignature, UU
 
     boolean existsBySignature(String signature);
 
+    boolean existsByNonce(String nonce);
+
     Optional<UsedSignature> findBySignature(String signature);
 
     List<UsedSignature> findByProductId(UUID productId);
@@ -26,6 +28,8 @@ public interface UsedSignatureRepository extends JpaRepository<UsedSignature, UU
     List<UsedSignature> findByAction(SignatureAction action);
 
     List<UsedSignature> findByUsedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    List<UsedSignature> findByExpiresAtBefore(LocalDateTime expiry);
 
     Optional<UsedSignature> findFirstByProductIdOrderByUsedAtDesc(UUID productId);
 }

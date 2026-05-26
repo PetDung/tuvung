@@ -41,4 +41,6 @@ public interface ShipmentRepository extends JpaRepository<Shipment, UUID> {
             UUID fromUserId, UUID toUserId, UUID distributorId, Pageable pageable);
 
     List<Shipment> findByStatusAndDistributorIdIsNull(ShipmentStatus status);
+
+    List<Shipment> findByProductIdIn(List<UUID> productIds);
 }

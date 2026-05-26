@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,6 +27,7 @@ public class ProductController {
     private final SecurityUtils securityUtils;
 
     @PostMapping
+    @PreAuthorize("hasRole('FARMER')")
     public ResponseEntity<ApiResponse<ProductResponse>> createProduct(@Valid @RequestBody CreateProductRequest request) {
         log.info("Create product request received");
         ProductResponse product = productService.createProduct(request);
@@ -35,6 +37,7 @@ public class ProductController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('INSPECTOR', 'ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getAllProducts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
@@ -58,39 +61,13 @@ public class ProductController {
     }
 
     @PostMapping("/{id}/approve")
+    @PreAuthorize("hasRole('INSPECTOR')")
     public ResponseEntity<ApiResponse<ProductResponse>> approveProduct(
             @PathVariable UUID id,
             @Valid @RequestBody ApproveProductRequest request) {
         log.info("Approve product request received: {}", id);
         ProductResponse product = productService.approveProduct(id, request);
         return ResponseEntity.ok(ApiResponse.success("Product approved successfully", product));
-    }
-
-    @PostMapping("/{id}/ship")
-    public ResponseEntity<ApiResponse<ProductResponse>> shipProduct(
-            @PathVariable UUID id,
-            @Valid @RequestBody ShipProductRequest request) {
-        log.info("Ship product request received: {}", id);
-        ProductResponse product = productService.shipProduct(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Product shipped successfully", product));
-    }
-
-    @PostMapping("/{id}/receive")
-    public ResponseEntity<ApiResponse<ProductResponse>> receiveProduct(
-            @PathVariable UUID id,
-            @Valid @RequestBody ReceiveProductRequest request) {
-        log.info("Receive product request received: {}", id);
-        ProductResponse product = productService.receiveProduct(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Product received successfully", product));
-    }
-
-    @PutMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<ProductResponse>> updateProductStatus(
-            @PathVariable UUID id,
-            @Valid @RequestBody UpdateProductStatusRequest request) {
-        log.info("Update product status request received: {}", id);
-        ProductResponse product = productService.updateProductStatus(id, request);
-        return ResponseEntity.ok(ApiResponse.success("Product status updated successfully", product));
     }
 
     @GetMapping("/{id}/history")
@@ -108,6 +85,7 @@ public class ProductController {
     }
 
     @GetMapping("/farmer/{farmerId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getProductsByFarmer(@PathVariable UUID farmerId) {
         log.info("Get products by farmer request received: {}", farmerId);
         List<ProductResponse> products = productService.getProductsByFarmer(farmerId);
@@ -115,6 +93,7 @@ public class ProductController {
     }
 
     @GetMapping("/status/{status}")
+    @PreAuthorize("hasAnyRole('INSPECTOR', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getProductsByStatus(@PathVariable ProductStatus status) {
         log.info("Get products by status request received: {}", status);
         List<ProductResponse> products = productService.getProductsByStatus(status);
@@ -122,6 +101,7 @@ public class ProductController {
     }
 
     @GetMapping("/approved")
+    @PreAuthorize("hasRole('DISTRIBUTOR')")  // RETAILER dùng /retailer thay thế
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getApprovedProducts() {
         log.info("Get approved products request received");
         List<ProductResponse> products = productService.getApprovedProducts();
@@ -129,10 +109,29 @@ public class ProductController {
     }
 
     @GetMapping("/my")
+    @PreAuthorize("hasRole('FARMER')")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getMyProducts() {
         log.info("Get my products request received");
         UUID farmerId = securityUtils.getCurrentUserId();
         List<ProductResponse> products = productService.getProductsByFarmer(farmerId);
+        return ResponseEntity.ok(ApiResponse.success(products));
+    }
+
+    @GetMapping("/retailer")
+    @PreAuthorize("hasRole('RETAILER')")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getRetailerProducts() {
+        log.info("Get retailer products request received");
+        UUID userId = securityUtils.getCurrentUserId();
+        List<ProductResponse> products = productService.getRetailerProducts(userId);
+        return ResponseEntity.ok(ApiResponse.success(products));
+    }
+
+    @GetMapping("/distributor")
+    @PreAuthorize("hasRole('DISTRIBUTOR')")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getDistributorProducts() {
+        log.info("Get distributor products request received");
+        UUID userId = securityUtils.getCurrentUserId();
+        List<ProductResponse> products = productService.getDistributorProducts(userId);
         return ResponseEntity.ok(ApiResponse.success(products));
     }
 }

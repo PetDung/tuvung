@@ -40,6 +40,7 @@ public class ShipmentController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('RETAILER', 'DISTRIBUTOR')")
     public ResponseEntity<ApiResponse<ShipmentListResponse>> getShipments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
@@ -68,6 +69,7 @@ public class ShipmentController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('RETAILER', 'DISTRIBUTOR', 'ADMIN')")
     public ResponseEntity<ApiResponse<ShipmentResponse>> getShipment(@PathVariable UUID id) {
         log.info("Get shipment request received: {}", id);
         ShipmentResponse shipment = shipmentService.getShipment(id);
@@ -85,26 +87,8 @@ public class ShipmentController {
         return ResponseEntity.ok(ApiResponse.success("Shipment accepted successfully", shipment));
     }
 
-    @PutMapping("/{id}/start")
-    @PreAuthorize("hasRole('DISTRIBUTOR')")
-    public ResponseEntity<ApiResponse<ShipmentResponse>> startShipping(
-            @PathVariable UUID id,
-            @RequestParam(required = false) String transportType,
-            @RequestParam(required = false) String vehiclePlate) {
-        log.info("Start shipping request received: {}", id);
-        ShipmentResponse shipment = shipmentService.startShipping(id, transportType, vehiclePlate);
-        return ResponseEntity.ok(ApiResponse.success("Shipping started successfully", shipment));
-    }
-
-    @PutMapping("/{id}/delivered")
-    @PreAuthorize("hasRole('DISTRIBUTOR')")
-    public ResponseEntity<ApiResponse<ShipmentResponse>> markDelivered(@PathVariable UUID id) {
-        log.info("Mark delivered request received: {}", id);
-        ShipmentResponse shipment = shipmentService.markDelivered(id);
-        return ResponseEntity.ok(ApiResponse.success("Shipment marked as delivered", shipment));
-    }
-
     @GetMapping("/{id}/events")
+    @PreAuthorize("hasAnyRole('RETAILER', 'DISTRIBUTOR', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<ShipmentEvent>>> getShipmentEvents(@PathVariable UUID id) {
         log.info("Get shipment events request received: {}", id);
         List<ShipmentEvent> events = shipmentService.getShipmentEvents(id);
@@ -121,6 +105,7 @@ public class ShipmentController {
     }
 
     @GetMapping("/my")
+    @PreAuthorize("hasAnyRole('RETAILER', 'DISTRIBUTOR')")
     public ResponseEntity<ApiResponse<ShipmentListResponse>> getMyShipments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
